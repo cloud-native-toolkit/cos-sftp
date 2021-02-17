@@ -1,0 +1,17 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ include "cos-sftp.pvcname" . }}
+  annotations:
+    ibm.io/auto-create-bucket: "false"
+    ibm.io/auto-delete-bucket: "false"
+    ibm.io/bucket: {{ required "The name of the bucket is required: pvc.bucketName" .Values.pvc.bucketName }}
+    ibm.io/secret-name: {{ required "The name of the secret containing the Object Storage credentials: pvc.secretName" .Values.pvc.secretName }}
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ibmc-s3fs-flex-regional
+

@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cos-sftp.fullname" . }}
+  labels:
+    {{- include "cos-sftp.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "cos-sftp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "cos-sftp.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cos-sftp.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+      - name: cos-volume
+        persistentVolumeClaim:
+          claimName: {{ include "cos-sftp.pvcname" . }}
+      - name: sftp-users
+        emptyDir: {}
+      - name: host-ssh-keys-secret
+        secret:
+          secretName: host-ssh-keys
+      - name: host-ssh-keys
+        emptyDir: {}
+      initContainers:
+        - name: create-users
+          image: alpine
+          volumeMounts:
+            - mountPath: /tmp
+              name: sftp-users
+          command: [ "sh", "-c", {{ printf "echo 'admin:%s:e:1001:0' > /tmp/users.conf" .Values.encryptedPassword }} ]
+        - name: setup-host-keys
+          image: alpine
+          volumeMounts:
+            - mountPath: /source
+              name: host-ssh-keys-secret
+            - mountPath: /target
+              name: host-ssh-keys
+          command: [ "sh", "-c", "cp /source/* /target && chmod 400 /target/*" ]
+      containers:
+        - name: {{ .Chart.Name }}
+          volumeMounts:
+            - name: cos-volume
+              mountPath: /home/admin/cos
+              readOnly: true
+            - name: sftp-users
+              mountPath: /etc/sftp/users.conf
+              subPath: users.conf
+            - name: host-ssh-keys
+              mountPath: /etc/ssh/ssh_host_ed25519_key.pub
+              subPath: ssh_host_ed25519_key.pub
+              readOnly: true
+            - name: host-ssh-keys
+              mountPath: /etc/ssh/ssh_host_ed25519_key
+              subPath: ssh_host_ed25519_key
+              readOnly: true
+            - name: host-ssh-keys
+              mountPath: /etc/ssh/ssh_host_rsa_key.pub
+              subPath: ssh_host_rsa_key.pub
+              readOnly: true
+            - name: host-ssh-keys
+              mountPath: /etc/ssh/ssh_host_rsa_key
+              subPath: ssh_host_rsa_key
+              readOnly: true
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: sftp
+              containerPort: 22
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: sftp
+          readinessProbe:
+            tcpSocket:
+              port: sftp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
